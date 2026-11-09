@@ -1,3 +1,4 @@
+#pragma once
 #import <Foundation/Foundation.h>
 #import <math.h>
 static inline NSDictionary *WLOCValidatedTarget(id value){

@@ -9,6 +9,7 @@
 #import "CertificateTrust.h"
 #import "LocalControl.h"
 #import "TargetSettings.h"
+#import "LocationChoices.h"
 #import <MapKit/MapKit.h>
 #include "rules.h"
 #include <sys/sysctl.h>
@@ -67,6 +68,7 @@ NSString *RunRules(NSString *command,BOOL *success);
  self.mapStatus=[self label:11];self.mapStatus.text=@"地图加载中；可双指缩放、拖动并点击选点。";self.mapStatus.numberOfLines=2;self.mapStatus.textColor=UIColor.secondaryLabelColor;[stack addArrangedSubview:self.mapStatus];
  self.locationStatus=[self label:11];self.locationStatus.numberOfLines=2;self.locationStatus.textColor=UIColor.secondaryLabelColor;self.locationStatus.hidden=YES;[stack addArrangedSubview:self.locationStatus];
  self.selectionLabel=[self label:14];self.selectionLabel.text=@"请在地图上点击要使用的位置";[stack addArrangedSubview:self.selectionLabel];
+ UIStackView *favoritesRow=[[UIStackView alloc]initWithArrangedSubviews:@[[self button:@"收藏选点" action:@selector(saveFavorite) prominent:NO],[self button:@"我的收藏" action:@selector(favorites) prominent:NO]]];favoritesRow.axis=UILayoutConstraintAxisHorizontal;favoritesRow.distribution=UIStackViewDistributionFillEqually;favoritesRow.spacing=8;[stack addArrangedSubview:favoritesRow];
  self.modifyButton=[self button:@"修改" action:@selector(modify) prominent:YES];[stack addArrangedSubview:self.modifyButton];
  self.result=[self label:13];self.result.text=@"点击修改将自动检查证书和代理；必要时先备份并处理单条定位规则。";[stack addArrangedSubview:self.result];
  self.certificateButton=[self button:@"查看/安装本机证书" action:@selector(certificate) prominent:NO];self.certificateButton.hidden=YES;[stack addArrangedSubview:self.certificateButton];
@@ -131,7 +133,7 @@ NSString *RunRules(NSString *command,BOOL *success);
 - (void)recordRestartRequired{[NSUserDefaults.standardUserDefaults setObject:[self bootSession] forKey:@"rulesRestartBoot"];}
 - (void)modify{
  if(self.busy)return;if(self.waitingLocation){[self cancelLocation];self.locationStatus.text=@"已取消读取当前位置。";}self.statusPending=NO;[self.view endEditing:YES];if(![self validTarget:self.target]){self.result.text=@"请先在地图上点击选择位置。";return;}
- self.didReloadProvider=NO;self.controlFailures=0;self.lastControlError=nil;NSUInteger op=++self.operation;self.pendingTarget=[self.target copy];self.certificateButton.hidden=YES;[self progress:@"checking" message:@"正在自动检查：本机证书…"];
+ self.didReloadProvider=NO;self.controlFailures=0;self.lastControlError=nil;NSUInteger op=++self.operation;self.pendingTarget=WLOCRandomTarget(self.target);if(!self.pendingTarget){self.result.text=@"无法生成本次位置，请重新选点。";return;}self.selectionLabel.text=[NSString stringWithFormat:@"本次使用 %.6f, %.6f · 已随机偏移约 10 米",[self.pendingTarget[@"latitude"]doubleValue],[self.pendingTarget[@"longitude"]doubleValue]];self.certificateButton.hidden=YES;[self progress:@"checking" message:@"正在自动检查：本机证书…"];
  if([self restartRequired]){[self fail:@"上次规则操作后尚未重启，请重启 iPhone 后再点击修改。" operation:op];return;}
  NSError *certificateError=[self certificateError];if(certificateError){self.phase=@"certificate";self.result.text=@"本机证书校验未通过。尚未安装或完全信任时，请完成系统设置后返回；若已完成，请查看运行信息中的具体错误。";[self append:[NSString stringWithFormat:@"本机 TLS 证书校验：%@ %ld %@；底层错误：%@",certificateError.domain,(long)certificateError.code,certificateError.localizedDescription,certificateError.userInfo[NSUnderlyingErrorKey]?:@"无"]];self.certificateButton.hidden=NO;[self unlock];return;}
  [self loadManagerForOperation:op];
@@ -179,7 +181,7 @@ NSString *RunRules(NSString *command,BOOL *success);
  if([status[@"controlAPI"]integerValue]!=1||![status[@"ready"]boolValue]){self.lastControlError=@"本机代理的网络配置尚未就绪";self.result.text=@"本机代理已响应，但网络配置尚未就绪；继续等待…";return;}
  NSDictionary *target=status[@"target"];BOOL matching=[self validTarget:target]&&self.pendingTarget&&fabs([target[@"latitude"]doubleValue]-[self.pendingTarget[@"latitude"]doubleValue])<1e-7&&fabs([target[@"longitude"]doubleValue]-[self.pendingTarget[@"longitude"]doubleValue])<1e-7;if(!matching){[self stopTunnel:@"代理回传坐标与本次目标不符"];[self fail:@"代理未确认本次目标坐标，已停止。" operation:op];return;}
  if([status[@"failures"]unsignedIntegerValue]>0&&[status[@"patched"]unsignedIntegerValue]==0){self.phase=@"requestError";[self unlock];self.result.text=[NSString stringWithFormat:@"VPN 保持连接，但定位响应尚未重写：%@",status[@"last"]?:@"请求失败"];[self append:self.result.text];return;}
- self.phase=@"success";self.confirmedOperation=op;self.confirmedTarget=[self.pendingTarget copy];[self unlock];[NSUserDefaults.standardUserDefaults setObject:self.pendingTarget forKey:@"target"];
+ self.phase=@"success";self.confirmedOperation=op;self.confirmedTarget=[self.pendingTarget copy];[self unlock];[NSUserDefaults.standardUserDefaults setObject:self.target forKey:@"target"];
  if([status[@"patched"]unsignedIntegerValue]>0)self.result.text=[NSString stringWithFormat:@"成功：已重写 %@ 条网络定位响应。\n请在系统中手动关闭并重新打开定位服务。",status[@"patched"]];else self.result.text=@"成功：代理已启用并确认坐标，实际位置待验证。\n请在系统中手动关闭并重新打开定位服务，再查看位置。";if(self.hintedOperation!=op){self.hintedOperation=op;self.hintPending=YES;}[self showActivationHint];
 }
 - (void)refresh{
@@ -200,6 +202,25 @@ NSString *RunRules(NSString *command,BOOL *success);
 - (void)stopTunnel:(NSString *)reason{[self append:[@"App 主动请求断开 VPN：" stringByAppendingString:reason]];[self.manager.connection stopVPNTunnel];}
 - (void)stop{if([self.phase isEqual:@"rules"]){self.result.text=@"规则事务进行中，请等待结束。";return;}self.operation++;self.hintPending=NO;self.statusPending=NO;self.pendingTarget=nil;self.certificateButton.hidden=YES;[self stopTunnel:@"用户点击恢复真实定位"];NSUInteger op=self.operation;[NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray *managers,NSError *error){dispatch_async(dispatch_get_main_queue(),^{if(op!=self.operation)return;for(NETunnelProviderManager *m in managers)if([((NETunnelProviderProtocol *)m.protocolConfiguration).providerBundleIdentifier isEqual:@"local.wloc.standalone.tunnel"]){self.manager=m;[self append:@"App 主动请求断开 VPN：用户点击恢复真实定位"];[m.connection stopVPNTunnel];}if(error){self.result.text=error.localizedDescription;[self append:error.localizedDescription];}});}];self.phase=@"idle";self.result.text=@"已请求停止代理，系统网络定位将恢复；定位缓存可能需要等待刷新。";[self unlock];}
 - (void)certificate{NSURL *url=[NSBundle.mainBundle URLForResource:@"WLOC-Local" withExtension:@"mobileconfig"];if(!url){self.result.text=@"安装包缺少证书描述文件，请重新安装。";return;}UIActivityViewController *share=[[UIActivityViewController alloc]initWithActivityItems:@[url] applicationActivities:nil];share.popoverPresentationController.sourceView=self.certificateButton;[self presentViewController:share animated:YES completion:nil];self.result.text=@"将证书存入“文件”并打开安装；到 设置 → 通用 → 关于本机 → 证书信任设置 启用本机 WLOC 完全信任。返回后自动继续。";}
+- (void)saveFavorite{
+ if(self.busy)return;if(![self validTarget:self.target]){self.result.text=@"请先选择要收藏的位置。";return;}NSDictionary *base=[self.target copy];
+ UIAlertController *a=[UIAlertController alertControllerWithTitle:@"收藏位置" message:@"保存所选原始位置。每次修改会在附近随机偏移 8～12 米。" preferredStyle:UIAlertControllerStyleAlert];
+ [a addTextFieldWithConfigurationHandler:^(UITextField *f){f.placeholder=@"名称，如家、公司（最多 60 字）";}];
+ [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+ [a addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){BOOL saved=WLOCSaveFavorite(NSUserDefaults.standardUserDefaults,a.textFields.firstObject.text,base);self.result.text=saved?@"位置已收藏，仅保存在本机。":@"保存失败：请填写 1～60 字名称，收藏最多 100 个。";}]];[self presentViewController:a animated:YES completion:nil];
+}
+- (void)favorites{
+ if(self.busy)return;NSArray *items=WLOCReadFavorites(NSUserDefaults.standardUserDefaults);
+ UIAlertController *a=[UIAlertController alertControllerWithTitle:@"我的收藏" message:items.count?@"选择位置后点修改，即可使用附近的新坐标。":@"还没有收藏，请先在地图选点，再点收藏选点。" preferredStyle:UIAlertControllerStyleActionSheet];
+ for(NSDictionary *item in items)[a addAction:[UIAlertAction actionWithTitle:item[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self favoriteActions:item];}]];
+ [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];a.popoverPresentationController.sourceView=self.view;a.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(self.view.bounds),CGRectGetMidY(self.view.bounds),1,1);[self presentViewController:a animated:YES completion:nil];
+}
+- (void)favoriteActions:(NSDictionary *)item{
+ UIAlertController *a=[UIAlertController alertControllerWithTitle:item[@"name"] message:@"收藏的是原始选点，使用时自动随机偏移约 10 米。" preferredStyle:UIAlertControllerStyleAlert];
+ [a addAction:[UIAlertAction actionWithTitle:@"使用此位置" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){if(self.busy)return;NSDictionary *t=item[@"target"];[self selectLatitude:[t[@"latitude"]doubleValue] longitude:[t[@"longitude"]doubleValue]];[self.map showLatitude:[t[@"latitude"]doubleValue] longitude:[t[@"longitude"]doubleValue] selected:YES];self.result.text=[NSString stringWithFormat:@"已选择收藏“%@”，点击修改即可启用。",item[@"name"]];}]];
+ [a addAction:[UIAlertAction actionWithTitle:@"删除收藏" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){WLOCDeleteFavorite(NSUserDefaults.standardUserDefaults,item[@"id"]);self.result.text=@"已删除收藏。";}]];
+ [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:a animated:YES completion:nil];
+}
 - (void)coordinates{
  if(self.busy)return;UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"跳转到坐标" message:@"WGS84 经纬度。确认后会在地图上标记该位置。" preferredStyle:UIAlertControllerStyleAlert];[alert addTextFieldWithConfigurationHandler:^(UITextField *f){f.placeholder=@"纬度 -90～90";f.keyboardType=UIKeyboardTypeNumbersAndPunctuation;f.text=self.target?[self.target[@"latitude"]description]:@"";}];[alert addTextFieldWithConfigurationHandler:^(UITextField *f){f.placeholder=@"经度 -180～180";f.keyboardType=UIKeyboardTypeNumbersAndPunctuation;f.text=self.target?[self.target[@"longitude"]description]:@"";}];[alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];[alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){double lat=0,lon=0;NSScanner *x=[NSScanner scannerWithString:alert.textFields[0].text?:@""],*y=[NSScanner scannerWithString:alert.textFields[1].text?:@""];if(![x scanDouble:&lat]||!x.isAtEnd||![y scanDouble:&lon]||!y.isAtEnd||![self validTarget:@{@"latitude":@(lat),@"longitude":@(lon)}]){self.result.text=@"坐标无效，请重新输入。";return;}[self selectLatitude:lat longitude:lon];[self.map showLatitude:lat longitude:lon selected:YES];}]];[self presentViewController:alert animated:YES completion:nil];
 }
