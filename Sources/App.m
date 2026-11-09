@@ -6,6 +6,7 @@
 #import "LocationFix.h"
 #import "SearchResults.h"
 #import "VPNLifecycle.h"
+#import "CertificateTrust.h"
 #import "LocalControl.h"
 #import "TargetSettings.h"
 #import <MapKit/MapKit.h>
@@ -68,7 +69,7 @@ NSString *RunRules(NSString *command,BOOL *success);
  self.selectionLabel=[self label:14];self.selectionLabel.text=@"请在地图上点击要使用的位置";[stack addArrangedSubview:self.selectionLabel];
  self.modifyButton=[self button:@"修改" action:@selector(modify) prominent:YES];[stack addArrangedSubview:self.modifyButton];
  self.result=[self label:13];self.result.text=@"点击修改将自动检查证书和代理；必要时先备份并处理单条定位规则。";[stack addArrangedSubview:self.result];
- self.certificateButton=[self button:@"安装证书（首次需要系统确认）" action:@selector(certificate) prominent:NO];self.certificateButton.hidden=YES;[stack addArrangedSubview:self.certificateButton];
+ self.certificateButton=[self button:@"查看/安装本机证书" action:@selector(certificate) prominent:NO];self.certificateButton.hidden=YES;[stack addArrangedSubview:self.certificateButton];
  self.stopButton=[self button:@"恢复真实定位" action:@selector(stop) prominent:NO];[stack addArrangedSubview:self.stopButton];
  __weak Home *weakSelf=self;self.map.selection=^(double lat,double lon){[weakSelf selectLatitude:lat longitude:lon];};self.map.notice=^(NSString *message){weakSelf.mapStatus.text=message;};
  self.map.diagnostic=^(NSString *message){[weakSelf append:[@"地图请求：" stringByAppendingString:message]];};
@@ -118,8 +119,11 @@ NSString *RunRules(NSString *command,BOOL *success);
 - (void)unlock{self.searchBar.userInteractionEnabled=YES;self.stopButton.enabled=YES;self.busy=NO;self.modifyButton.enabled=YES;self.map.userInteractionEnabled=YES;self.locationButton.enabled=!self.waitingLocation;self.navigationItem.leftBarButtonItem.enabled=YES;}
 - (void)fail:(NSString *)message operation:(NSUInteger)op{if(op!=self.operation)return;self.phase=@"failed";self.result.text=[@"未完成：" stringByAppendingString:message];self.pendingTarget=nil;[self append:self.result.text];[self unlock];}
 - (NSError *)certificateError{
- NSData *der=[NSData dataWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"server" withExtension:@"der"]];SecCertificateRef leaf=der?SecCertificateCreateWithData(NULL,(__bridge CFDataRef)der):NULL;SecPolicyRef policy=SecPolicyCreateSSL(true,CFSTR("gs-loc.apple.com"));SecTrustRef trust=NULL;CFErrorRef error=NULL;BOOL trusted=NO;
- if(leaf&&SecTrustCreateWithCertificates(leaf,policy,&trust)==errSecSuccess){SecTrustSetNetworkFetchAllowed(trust,false);trusted=SecTrustEvaluateWithError(trust,&error);}NSError *result=trusted?nil:(error?CFBridgingRelease(error):[NSError errorWithDomain:@"WLOC 证书资源" code:1 userInfo:@{NSLocalizedDescriptionKey:@"缺少本机证书"}]);if(trust)CFRelease(trust);if(leaf)CFRelease(leaf);CFRelease(policy);return result;
+ NSData *leaf=[NSData dataWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"server" withExtension:@"der"]];
+ NSData *profileData=[NSData dataWithContentsOfURL:[NSBundle.mainBundle URLForResource:@"WLOC-Local" withExtension:@"mobileconfig"]];
+ id profile=profileData?[NSPropertyListSerialization propertyListWithData:profileData options:NSPropertyListImmutable format:NULL error:NULL]:nil;
+ NSData *root=nil;if([profile isKindOfClass:NSDictionary.class]){id payloads=profile[@"PayloadContent"];if([payloads isKindOfClass:NSArray.class])for(id item in payloads)if([item isKindOfClass:NSDictionary.class]&&[item[@"PayloadType"]isEqual:@"com.apple.security.root"]&&[item[@"PayloadContent"]isKindOfClass:NSData.class]){root=item[@"PayloadContent"];break;}}
+ return WLOCCertificateTrustError(leaf,root);
 }
 - (void)executeRules:(NSString *)command completion:(void (^)(BOOL,NSString *))completion{dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{BOOL ok=NO;NSString *log=RunRules(command,&ok);dispatch_async(dispatch_get_main_queue(),^{[self append:log];completion(ok,log);});});}
 - (NSString *)bootSession{struct timeval boot={0};size_t size=sizeof(boot);if(sysctlbyname("kern.boottime",&boot,&size,NULL,0)!=0)return @"unavailable";return [NSString stringWithFormat:@"%lld.%d",(long long)boot.tv_sec,(int)boot.tv_usec];}
@@ -129,7 +133,7 @@ NSString *RunRules(NSString *command,BOOL *success);
  if(self.busy)return;if(self.waitingLocation){[self cancelLocation];self.locationStatus.text=@"已取消读取当前位置。";}self.statusPending=NO;[self.view endEditing:YES];if(![self validTarget:self.target]){self.result.text=@"请先在地图上点击选择位置。";return;}
  self.didReloadProvider=NO;self.controlFailures=0;self.lastControlError=nil;NSUInteger op=++self.operation;self.pendingTarget=[self.target copy];self.certificateButton.hidden=YES;[self progress:@"checking" message:@"正在自动检查：本机证书…"];
  if([self restartRequired]){[self fail:@"上次规则操作后尚未重启，请重启 iPhone 后再点击修改。" operation:op];return;}
- NSError *certificateError=[self certificateError];if(certificateError){self.phase=@"certificate";self.result.text=@"首次需要安装并完全信任本机证书。点击下方安装；完成系统设置后返回，将自动继续。";[self append:certificateError.localizedDescription];self.certificateButton.hidden=NO;[self unlock];return;}
+ NSError *certificateError=[self certificateError];if(certificateError){self.phase=@"certificate";self.result.text=@"本机证书校验未通过。尚未安装或完全信任时，请完成系统设置后返回；若已完成，请查看运行信息中的具体错误。";[self append:[NSString stringWithFormat:@"本机 TLS 证书校验：%@ %ld %@；底层错误：%@",certificateError.domain,(long)certificateError.code,certificateError.localizedDescription,certificateError.userInfo[NSUnderlyingErrorKey]?:@"无"]];self.certificateButton.hidden=NO;[self unlock];return;}
  [self loadManagerForOperation:op];
 }
 - (void)becameActive{[self showActivationHint];if(self.manager&&![self.phase isEqual:@"manual"]&&![self.phase isEqual:@"certificate"]){NSUInteger op=self.operation;self.reconcilingVPN=YES;[NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray *managers,NSError *error){dispatch_async(dispatch_get_main_queue(),^{self.reconcilingVPN=NO;if(op!=self.operation)return;if(error)[self append:[NSString stringWithFormat:@"返回前台配置刷新：%@ %ld %@",error.domain,(long)error.code,error.localizedDescription]];for(NETunnelProviderManager *m in managers)if([((NETunnelProviderProtocol *)m.protocolConfiguration).providerBundleIdentifier isEqual:@"local.wloc.standalone.tunnel"]){self.manager=m;break;}if(WLOCShouldRecheckOnForeground(self.manager.connection.status,[self validTarget:self.pendingTarget],self.confirmedOperation==op&&self.confirmedTarget!=nil)){[self append:@"从系统设置返回，连接仍在；重新核对实际代理，旧状态错误仅保留在日志。"];self.pendingTarget=self.pendingTarget?:self.confirmedTarget;self.phase=@"connecting";self.deadline=[NSDate dateWithTimeIntervalSinceNow:15];self.result.text=@"VPN 已连接，正在后台核对坐标…";}[self refresh];});}];return;}if([self.phase isEqual:@"manual"]){NSUInteger op=self.operation;[NETunnelProviderManager loadAllFromPreferencesWithCompletionHandler:^(NSArray *managers,NSError *error){dispatch_async(dispatch_get_main_queue(),^{if(op!=self.operation||![self.phase isEqual:@"manual"])return;for(NETunnelProviderManager *m in managers)if([((NETunnelProviderProtocol *)m.protocolConfiguration).providerBundleIdentifier isEqual:@"local.wloc.standalone.tunnel"]){self.manager=m;break;}if(error)[self append:error.localizedDescription];[self refresh];});}];return;}if([self.phase isEqual:@"certificate"]&&self.pendingTarget&&![self certificateError]){self.certificateButton.hidden=YES;[self progress:@"checking" message:@"证书信任已通过，自动继续…"];[self loadManagerForOperation:self.operation];}}
