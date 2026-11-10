@@ -33,11 +33,11 @@ else:
  run('swift',ROOT/'build_icon.swift',assets/'AppIcon.appiconset')
  run('xcrun','actool',assets,'--compile',APP,'--platform','iphoneos','--minimum-deployment-target','15.0','--target-device','iphone','--app-icon','AppIcon','--output-partial-info-plist',plist_path)
 icon_info=plistlib.loads(plist_path.read_bytes())
-base={'CFBundleVersion':'14','CFBundleShortVersionString':'0.3.9','CFBundleDevelopmentRegion':'zh_CN','MinimumOSVersion':'15.0','CFBundleSupportedPlatforms':['iPhoneOS'],'UIDeviceFamily':[1],'LSRequiresIPhoneOS':True}
+base={'CFBundleVersion':'17','CFBundleShortVersionString':'0.3.12','CFBundleDevelopmentRegion':'zh_CN','MinimumOSVersion':'15.0','CFBundleSupportedPlatforms':['iPhoneOS'],'UIDeviceFamily':[1],'LSRequiresIPhoneOS':True}
 plist(APP/'Info.plist',dict(base,**icon_info,CFBundleIdentifier='local.wloc.standalone',CFBundleName='loc x',CFBundleDisplayName='loc x',CFBundleExecutable='WLOC',CFBundlePackageType='APPL',UILaunchScreen={},NSLocationWhenInUseUsageDescription='点击当前位置时读取系统位置并在地图标记；不会自动修改所选目标或启用代理。',UISupportedInterfaceOrientations=['UIInterfaceOrientationPortrait']))
 plist(EXT/'Info.plist',dict(base,CFBundleIdentifier='local.wloc.standalone.tunnel',CFBundleName='WLOCTunnel',CFBundleExecutable='WLOCTunnel',CFBundlePackageType='XPC!',NSExtension={'NSExtensionPointIdentifier':'com.apple.networkextension.packet-tunnel','NSExtensionPrincipalClass':'Tunnel'}))
 common=['xcrun','--sdk','iphoneos','clang','-target','arm64-apple-ios15.0','-isysroot',sdk,'-fobjc-arc','-fblocks','-O2','-I'+str(ROOT/'Vendor'),'-Wno-deprecated-declarations','-Wno-incompatible-pointer-types-discards-qualifiers']
-run(*common,ROOT/'Sources/App.m',ROOT/'Sources/LocalControl.m',ROOT/'Sources/MapPanel.m',ROOT/'Sources/RulesBridge.m',ROOT/'Vendor/rules.c','-framework','UIKit','-framework','WebKit','-framework','MapKit','-framework','CoreGraphics','-framework','CoreLocation','-framework','NetworkExtension','-framework','Security','-lsqlite3','-o',APP/'WLOC')
+run(*common,ROOT/'Sources/App.m',ROOT/'Sources/GlobalSearch.m',ROOT/'Sources/LocalControl.m',ROOT/'Sources/MapPanel.m',ROOT/'Sources/RulesBridge.m',ROOT/'Vendor/rules.c','-framework','UIKit','-framework','WebKit','-framework','MapKit','-framework','CoreGraphics','-framework','CoreLocation','-framework','NetworkExtension','-framework','Security','-lsqlite3','-o',APP/'WLOC')
 run(*common,ROOT/'Sources/Tunnel.m',ROOT/'Sources/Proxy.m','-fapplication-extension','-framework','Foundation','-framework','NetworkExtension','-framework','Security','-framework','JavaScriptCore','-framework','CFNetwork','-e','_NSExtensionMain','-o',EXT/'WLOCTunnel')
 (EXT/'wloc.js').write_bytes((ROOT/'Vendor/wloc.js').read_bytes())
 for directory in [APP,EXT]:
@@ -46,7 +46,7 @@ for directory in [APP,EXT]:
  plist(BUILD/(directory.stem+'.entitlements.plist'),ent)
 for directory in [EXT,APP]:run('codesign','--force','--sign','-','--generate-entitlement-der','--entitlements',BUILD/(directory.stem+'.entitlements.plist'),directory)
 run('codesign','--verify','--deep','--strict',APP)
-out=ROOT/'loc-x-0.3.9.tipa'
+out=ROOT/'loc-x-0.3.12.tipa'
 with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
  for p in (BUILD/'Payload').rglob('*'):
   if p.is_file():z.write(p,p.relative_to(BUILD))

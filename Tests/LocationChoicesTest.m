@@ -6,6 +6,7 @@ int main(){@autoreleasepool{
  NSDictionary *base=@{@"latitude":@39.9,@"longitude":@116.2};Check(![WLOCRandomTarget(base)isEqual:WLOCRandomTarget(base)]);
  Check(!WLOCOffsetTarget(base,100,0));Check(!WLOCRandomTarget(@{}));
  NSString *suite=[@"locx-test-" stringByAppendingString:NSUUID.UUID.UUIDString];NSUserDefaults *store=[[NSUserDefaults alloc]initWithSuiteName:suite];
+ Check(WLOCOffsetEnabled(store));Check(Distance(base,WLOCChosenTarget(base,store))>=7.99);[store setBool:NO forKey:@"randomOffsetEnabled"];Check([WLOCChosenTarget(base,store)isEqual:base]);Check(!WLOCOffsetEnabled([[NSUserDefaults alloc]initWithSuiteName:suite]));[store setBool:YES forKey:@"randomOffsetEnabled"];Check(Distance(base,WLOCChosenTarget(base,store))>=7.99);
  Check(WLOCSaveFavorite(store,@" 家 ",base));Check(WLOCSaveFavorite(store,@"公司",base));Check(!WLOCSaveFavorite(store,@" ",base));
  NSArray *items=WLOCReadFavorites([[NSUserDefaults alloc]initWithSuiteName:suite]);Check(items.count==2);Check([items[0][@"name"]isEqual:@"家"]);Check([items[0][@"target"]isEqual:base]);
  WLOCDeleteFavorite(store,items[0][@"id"]);Check(WLOCReadFavorites(store).count==1);Check([WLOCReadFavorites(store)[0][@"name"]isEqual:@"公司"]);

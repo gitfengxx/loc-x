@@ -16,6 +16,9 @@ static inline NSDictionary *WLOCRandomTarget(NSDictionary *base) {
     double u=(double)arc4random()/4294967296.0, v=(double)arc4random()/4294967296.0;
     return WLOCOffsetTarget(base,sqrt(64+80*u),2*M_PI*v);
 }
+static inline BOOL WLOCOffsetEnabled(NSUserDefaults *store){return [store objectForKey:@"randomOffsetEnabled"]==nil||[store boolForKey:@"randomOffsetEnabled"];}
+static inline NSDictionary *WLOCChosenTarget(NSDictionary *base,NSUserDefaults *store){return WLOCOffsetEnabled(store)?WLOCRandomTarget(base):WLOCValidatedTarget(base);}
+
 static inline NSArray *WLOCReadFavorites(NSUserDefaults *store) {
     id raw=[store objectForKey:@"favoriteLocations"];
     NSMutableArray *result=[NSMutableArray array];
