@@ -1,11 +1,1 @@
-const MAP_SOURCES = [
-  {
-    "id": "amap",
-    "name": "高德街道图",
-    "url": "https://webst0{s}.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}",
-    "subdomains": "1234",
-    "maxZoom": 18,
-    "gcj": true,
-    "attribution": "© 高德地图"
-  }
-];
+const MAP_SOURCES = [{"id": "amap", "name": "高德街道图", "url": "https://webst0{s}.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}", "subdomains": "1234", "maxZoom": 18, "gcj": true, "attribution": "© 高德地图"}, {"id": "osm", "name": "全球街道图（OSM）", "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png", "maxZoom": 19, "gcj": false, "attribution": "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>"}];

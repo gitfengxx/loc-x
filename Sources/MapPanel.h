@@ -5,11 +5,14 @@
 @property(nonatomic,copy) void (^diagnostic)(NSString *message);
 @property(nonatomic,copy) void (^notice)(NSString *message);
 @property(nonatomic) BOOL tilesVisible;
+@property(nonatomic,copy) NSString *pendingMapMode;
+@property(nonatomic,copy) NSDictionary *viewport;
 @property(nonatomic) NSInteger currentSource;
 @property(nonatomic) NSArray *pendingPoint;
 @property(nonatomic) NSArray *pendingCurrentLocation;
 - (void)showLatitude:(double)latitude longitude:(double)longitude selected:(BOOL)selected;
 - (void)showCurrentLatitude:(double)latitude longitude:(double)longitude accuracy:(double)accuracy;
 - (void)source:(NSInteger)index;
+- (void)mode:(NSString *)mode;
 - (void)retry;
 @end

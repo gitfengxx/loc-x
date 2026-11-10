@@ -7,5 +7,13 @@
     "maxZoom": 18,
     "gcj": true,
     "attribution": "© 高德地图"
+  },
+  {
+    "id": "osm",
+    "name": "全球街道图（OSM）",
+    "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "maxZoom": 19,
+    "gcj": false,
+    "attribution": "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>"
   }
 ]
